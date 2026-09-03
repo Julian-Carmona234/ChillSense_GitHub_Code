@@ -25,7 +25,6 @@
  * MQTTX / future cloud dashboard
  */
 
- 
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -321,12 +320,13 @@ static void telemetry_task(void *pvParameters)
 //---------------------------------------------------------
 // This function is called automatically by the MQTT library whenever something important happens with the MQTT connection.
 // examples:
-// - connection established
-// - connection lost
-// - message successfully published
-// - incoming message received
-// - connection/error condition occurs
+// -connection established
+// -connection lost
+// -message successfully published
+// -incoming message received
+// -connection/error condition occurs
 // The event_id tells us which MQTT event occurred.
+// (this might need some more work depending on how our hardware will be set up.)
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
     //debug message showing which MQTT event was received
@@ -377,7 +377,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
 
         
-        // Check whether the problem occurred in the underlying TCP/TLS network connection
+        //check whether the problem occurred in the underlying TCP/TLS network connection
         if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) 
         {
             //ESP-IDF TLS error code
