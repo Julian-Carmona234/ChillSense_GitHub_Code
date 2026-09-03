@@ -177,8 +177,8 @@ static void pulse_task(void *pvParameters)
         previous_valid_pulse_us = last_valid_pulse_us;
         last_valid_pulse_us = now_us;
 
-        // one pulse alone only tells us volume.
-        // two pulses are required to calculate flow rate because GPM depends on time between pulses
+        //one pulse alone only tells us volume
+        //two pulses are required to calculate flow rate because GPM depends on time between pulses
         if (previous_valid_pulse_us > 0) 
         {
             int64_t pulse_interval_us =
@@ -215,24 +215,24 @@ static void flow_meter_init(void)
     {
         .pin_bit_mask = (1ULL << FLOW_GPIO),
 
-        //input only.
+        //input only
         .mode = GPIO_MODE_INPUT,
 
-        //enable internal pull-up as an additional safeguard. 
-        //should still use the external 10k pull-up resistor from GPIO4 to 3.3 V.
+        //enable internal pull-up as an additional safeguard
+        //should still use the external 10k pull-up resistor from GPIO4 to 3.3 V
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
 
-        //meter contact closing pulls GPIO4 LOW.
+        //meter contact closing pulls GPIO4 LOW
         .intr_type = GPIO_INTR_NEGEDGE
     };
 
     ESP_ERROR_CHECK(gpio_config(&flow_gpio_config));
 
-    //install GPIO interrupt service.
+    //install GPIO interrupt service
     esp_err_t isr_result = gpio_install_isr_service(0);
 
-    //if "ESP_ERR_INVALID_STATE" appears it means the ISR service was already installed elsewhere.
+    //if "ESP_ERR_INVALID_STATE" appears it means the ISR service was already installed elsewhere
     if (isr_result != ESP_OK && isr_result != ESP_ERR_INVALID_STATE) 
     {
         ESP_ERROR_CHECK(isr_result);
@@ -317,60 +317,84 @@ static void telemetry_task(void *pvParameters)
 }
 
 //---------------------------------------------------------
-//MQTT event handler
-//--------------------------------------------------------- 
+//                  MQTT event handler
+//---------------------------------------------------------
+// This function is called automatically by the MQTT library whenever something important happens with the MQTT connection.
+// examples:
+// - connection established
+// - connection lost
+// - message successfully published
+// - incoming message received
+// - connection/error condition occurs
+// The event_id tells us which MQTT event occurred.
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
+    //debug message showing which MQTT event was received
     ESP_LOGD(TAG, "Event dispatched from event loop base=%s, event_id=%" PRIi32, base, event_id);
 
+    //convert the generic event data into an MQTT specific event structure
+    //this gives access to things like: message ID, topic, payload, and error information
     esp_mqtt_event_handle_t event = event_data;
 
+    //how the code will handle each MQTT event differently depending on event_id
     switch ((esp_mqtt_event_id_t)event_id) 
     {
     case MQTT_EVENT_CONNECTED:
 
+    
+        //ESP32 successfully connected to the MQTT broker
         ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
+        
+        //allows the telemetry task to begin publishing data.
         mqtt_connected = true;
         break;
 
     case MQTT_EVENT_DISCONNECTED:
 
+        //connection to the MQTT broker was lost >:(
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
+
+        //prevent telemetry from attempting to publish until the MQTT client reconnects
         mqtt_connected = false;
         break;
 
     case MQTT_EVENT_PUBLISHED:
-
+        //broker acknowledged that a Quality of Service (QoS) message was published
+        //msg_id identifies which MQTT message was acknowledged
         ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
         break;
 
     case MQTT_EVENT_DATA:
-
+                    
+        //this runs if the ESP32 receives an MQTT message from a topic it is subscribed to then prints the received topic and payload
         ESP_LOGI(TAG, "MQTT_EVENT_DATA");
         printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
         printf("DATA=%.*s\r\n", event->data_len, event->data);
         break;
 
     case MQTT_EVENT_ERROR:
-
+        //a MQTT connection or transport error occurred
         ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
 
+        
+        // Check whether the problem occurred in the underlying TCP/TLS network connection
         if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) 
         {
-
+            //ESP-IDF TLS error code
             ESP_LOGI(TAG, "Last error code reported from esp-tls: 0x%x", event->error_handle->esp_tls_last_esp_err);
-
+            //lower level TLS library error code
             ESP_LOGI(TAG, "Last tls stack error number: 0x%x", event->error_handle->esp_tls_stack_err);
-
+            //standard socket/network error information
             ESP_LOGI(TAG, "Last captured errno: %d (%s)", event->error_handle->esp_transport_sock_errno, strerror(event->error_handle->esp_transport_sock_errno));
-
         } 
-
+            
+            //the broker explicitly rejected the MQTT connection
             else if (event->error_handle->error_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED) 
             {
                 ESP_LOGI(TAG, "Connection refused error: 0x%x", event->error_handle->connect_return_code);
             } 
 
+                //catch any MQTT error type we were not specifically expecting
                 else 
                 {
                     ESP_LOGW(TAG, "Unknown MQTT error type: 0x%x",event->error_handle->error_type);
@@ -379,6 +403,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         break;
 
     default:
+        //log MQTT events that we are not explicitly handling
         ESP_LOGI(TAG, "Other MQTT event id: %d", event->event_id);
         break;
     }
