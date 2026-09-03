@@ -1,0 +1,16 @@
+# ChillSense shared ESP-IDF defaults
+# Local Wi-Fi credentials are intentionally NOT stored here.
+
+# ESP32-S3-DevKitC-1-N8R8 has 8 MB flash.
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+
+# TLS certificate bundle for MQTT server verification.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+
+# Use Wi-Fi as the development network interface.
+CONFIG_EXAMPLE_CONNECT_WIFI=y
+
+# Default test broker. Change in menuconfig for a private/cloud broker.
+CONFIG_EXAMPLE_MQTT_BROKER_URI="mqtts://broker.emqx.io:8883"

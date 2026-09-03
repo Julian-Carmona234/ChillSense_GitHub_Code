@@ -1,0 +1,28 @@
+# ESP-IDF generated files
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+compile_commands.json
+
+# Local ESP-IDF / editor state
+.espressif/
+.vscode/settings.json
+*.code-workspace
+
+# Secrets / local configuration
+secrets.h
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
