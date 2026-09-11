@@ -56,6 +56,14 @@
 //---------------------------------------------------------
 #define FLOW_GPIO GPIO_NUM_4
 
+//data LED
+#define DATA_LED_GPIO GPIO_NUM_38
+
+//thermistor GPIOs (not yet implemented)
+#define THERM_IN_GPIO GPIO_NUM_1
+#define THERM_OUT_GPIO GPIO_NUM_2
+#define THERM_LED_GPIO GPIO_NUM_10
+
 //meter is 1 gallon per pulse.
 #define GALLONS_PER_PULSE 1.0f
 
@@ -307,6 +315,15 @@ static void telemetry_task(void *pvParameters)
             //publish the JSON message to the MQTT broker
             //Qos 1 means deliver this message at least once
             int msg_id = esp_mqtt_client_publish(mqtt_client, "chillsense/test/telemetry", payload, 0, 1, 0);
+            
+            if (msg_id >= 0)
+            {
+                //flash data LED whenever telemetry is sent
+                gpio_set_level(DATA_LED_GPIO, 1);
+                vTaskDelay(pdMS_TO_TICKS(100));
+                gpio_set_level(DATA_LED_GPIO, 0);
+            }
+
 
             ESP_LOGI(TAG, "Telemetry sent: %s | msg_id=%d", payload, msg_id);
         }
@@ -362,6 +379,11 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         //broker acknowledged that a Quality of Service (QoS) message was published
         //msg_id identifies which MQTT message was acknowledged
         ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
+
+        gpio_set_level(DATA_LED_GPIO, 1);
+        //vTaskDelay(pdMS_TO_TICKS(100));
+        gpio_set_level(DATA_LED_GPIO, 0);
+
         break;
 
     case MQTT_EVENT_DATA:
@@ -452,6 +474,28 @@ static void mqtt_app_start(void)
 }
 
 //---------------------------------------------------------
+//              Status LED initialization
+//---------------------------------------------------------
+static void status_led_init(void)
+{
+    gpio_config_t led_config =
+    {
+        .pin_bit_mask = (1ULL << DATA_LED_GPIO),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    ESP_ERROR_CHECK(gpio_config(&led_config));
+
+    //start with data LED off
+    gpio_set_level(DATA_LED_GPIO, 0);
+
+    ESP_LOGI(TAG, "Data LED initialized on GPIO%d", DATA_LED_GPIO);
+}
+
+//---------------------------------------------------------
 //                          Main
 //---------------------------------------------------------
 // Program startup sequence:
@@ -480,6 +524,9 @@ void app_main(void)
 
     //strta the pulse processing task before enabling GPIO interupts so that the task is ready to handle pulses immediately
     xTaskCreate(pulse_task, "pulse_task", 3072, NULL, 10, &pulse_task_handle);
+
+    //configure GPIO38 for data/activity LED
+    status_led_init();
 
     //configure the GPIO4 for dry contact pulse detection
     flow_meter_init();
