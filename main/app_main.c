@@ -42,6 +42,8 @@
 
 #include "driver/gpio.h"
 
+#include "esp_adc/adc_oneshot.h"
+
 #include "protocol_examples_common.h"
 
 #include "esp_crt_bundle.h"
@@ -55,6 +57,11 @@
 //                    Configuration
 //---------------------------------------------------------
 #define FLOW_GPIO GPIO_NUM_4
+
+#define THERMISTOR_GPIO GPIO_NUM_1
+#define THERMISTOR_ADC_CHANNEL ADC_CHANNEL_0
+
+#define THERMISTOR_LED_GPIO GPIO_NUM_14
 
 //data LED
 #define DATA_LED_GPIO GPIO_NUM_38
@@ -98,6 +105,11 @@ static float flow_gpm = 0.0f;
 
 static int64_t last_valid_pulse_us = 0;
 static int64_t previous_valid_pulse_us = 0;
+
+//---------------------------------------------------------
+//                  Thermistor State
+//---------------------------------------------------------
+static adc_oneshot_unit_handle_t adc1_handle;
 
 //---------------------------------------------------------
 //           MQTT Certificate Configuration
@@ -251,6 +263,67 @@ static void flow_meter_init(void)
 }
 
 //---------------------------------------------------------
+//              Thermistor initialization
+//---------------------------------------------------------
+static void thermistor_init(void)
+{
+    //-----------------------------------------------------
+    // White thermistor status LED
+    //-----------------------------------------------------
+    gpio_config_t led_config =
+    {
+        .pin_bit_mask = (1ULL << THERMISTOR_LED_GPIO),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    ESP_ERROR_CHECK(gpio_config(&led_config));
+
+    //LED starts OFF until a valid sensor reading is detected
+    gpio_set_level(THERMISTOR_LED_GPIO, 0);
+
+
+    //-----------------------------------------------------
+    // ADC1 initialization
+    //-----------------------------------------------------
+    adc_oneshot_unit_init_cfg_t adc_init_config =
+    {
+        .unit_id = ADC_UNIT_1
+    };
+
+    ESP_ERROR_CHECK(
+        adc_oneshot_new_unit(&adc_init_config, &adc1_handle)
+    );
+
+
+    //-----------------------------------------------------
+    // GPIO1 / ADC1 Channel 0 configuration
+    //-----------------------------------------------------
+    adc_oneshot_chan_cfg_t adc_channel_config =
+    {
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_DEFAULT
+    };
+
+    ESP_ERROR_CHECK(
+        adc_oneshot_config_channel(
+            adc1_handle,
+            THERMISTOR_ADC_CHANNEL,
+            &adc_channel_config
+        )
+    );
+
+    ESP_LOGI(
+        TAG,
+        "Thermistor initialized on GPIO%d, status LED on GPIO%d",
+        THERMISTOR_GPIO,
+        THERMISTOR_LED_GPIO
+    );
+}
+
+//---------------------------------------------------------
 //          Periodic MQTT telemetry task
 //--------------------------------------------------------- 
 // Runs every 5 seconds
@@ -381,7 +454,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
 
         gpio_set_level(DATA_LED_GPIO, 1);
-        //vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(100));
         gpio_set_level(DATA_LED_GPIO, 0);
 
         break;
@@ -496,6 +569,70 @@ static void status_led_init(void)
 }
 
 //---------------------------------------------------------
+//              Thermistor monitoring task
+//---------------------------------------------------------
+static void thermistor_task(void *pvParameters)
+{
+    while (1)
+    {
+        int adc_raw = 0;
+
+        esp_err_t result = adc_oneshot_read(
+            adc1_handle,
+            THERMISTOR_ADC_CHANNEL,
+            &adc_raw
+        );
+
+        if (result == ESP_OK)
+        {
+            bool thermistor_valid =
+                (adc_raw > THERMISTOR_MIN_RAW) &&
+                (adc_raw < THERMISTOR_MAX_RAW);
+
+            if (thermistor_valid)
+            {
+                // Thermistor circuit appears connected
+                gpio_set_level(THERMISTOR_LED_GPIO, 1);
+
+                ESP_LOGI(
+                    TAG,
+                    "Thermistor OK: ADC raw = %d",
+                    adc_raw
+                );
+            }
+            else
+            {
+                // Reading is near one of the voltage rails,
+                // indicating possible open circuit,
+                // disconnected sensor, or short circuit
+                gpio_set_level(THERMISTOR_LED_GPIO, 0);
+
+                ESP_LOGW(
+                    TAG,
+                    "Thermistor fault/disconnected: ADC raw = %d",
+                    adc_raw
+                );
+            }
+        }
+        else
+        {
+            // ADC itself failed to return a reading
+            gpio_set_level(THERMISTOR_LED_GPIO, 0);
+
+            ESP_LOGE(
+                TAG,
+                "Failed to read thermistor ADC"
+            );
+        }
+
+        // Check once per second
+        vTaskDelay(
+            pdMS_TO_TICKS(THERMISTOR_CHECK_PERIOD_MS)
+        );
+    }
+}
+
+//---------------------------------------------------------
 //                          Main
 //---------------------------------------------------------
 // Program startup sequence:
@@ -530,6 +667,19 @@ void app_main(void)
 
     //configure the GPIO4 for dry contact pulse detection
     flow_meter_init();
+
+    //configure thermistor ADC and white status LED
+    thermistor_init();
+
+    //start continuous thermistor health monitoring
+    xTaskCreate(
+        thermistor_task,
+        "thermistor_task",
+        3072,
+        NULL,
+        5,
+        NULL
+    );
 
     //initialize esp-idf networking services
     ESP_ERROR_CHECK(nvs_flash_init());
