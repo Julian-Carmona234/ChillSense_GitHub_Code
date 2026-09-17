@@ -58,18 +58,30 @@
 //---------------------------------------------------------
 #define FLOW_GPIO GPIO_NUM_4
 
+// Thermistor
 #define THERMISTOR_GPIO GPIO_NUM_1
 #define THERMISTOR_ADC_CHANNEL ADC_CHANNEL_0
 
+// White thermistor status LED
 #define THERMISTOR_LED_GPIO GPIO_NUM_14
 
-//data LED
-#define DATA_LED_GPIO GPIO_NUM_38
+// Actual thermistor specifications
+#define THERMISTOR_R0_OHMS 50000.0f
+#define THERMISTOR_BETA 3590.0f
+#define THERMISTOR_T0_C 25.0f
 
-//thermistor GPIOs (not yet implemented)
-#define THERM_IN_GPIO GPIO_NUM_1
-#define THERM_OUT_GPIO GPIO_NUM_2
-#define THERM_LED_GPIO GPIO_NUM_10
+// Fixed resistor used in voltage divider
+// Use 47k or 50k physically on the breadboard.
+#define THERMISTOR_FIXED_RESISTOR_OHMS 50000.0f
+
+// Temporary health-check thresholds
+#define THERMISTOR_MIN_RAW 100
+#define THERMISTOR_MAX_RAW 3900
+
+#define THERMISTOR_CHECK_PERIOD_MS 1000
+
+//data LED
+#define DATA_LED_GPIO GPIO_NUM_15
 
 //meter is 1 gallon per pulse.
 #define GALLONS_PER_PULSE 1.0f
@@ -393,7 +405,7 @@ static void telemetry_task(void *pvParameters)
             {
                 //flash data LED whenever telemetry is sent
                 gpio_set_level(DATA_LED_GPIO, 1);
-                vTaskDelay(pdMS_TO_TICKS(100));
+                vTaskDelay(pdMS_TO_TICKS(1000));
                 gpio_set_level(DATA_LED_GPIO, 0);
             }
 
@@ -453,9 +465,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         //msg_id identifies which MQTT message was acknowledged
         ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
 
-        gpio_set_level(DATA_LED_GPIO, 1);
-        vTaskDelay(pdMS_TO_TICKS(100));
-        gpio_set_level(DATA_LED_GPIO, 0);
+        //gpio_set_level(DATA_LED_GPIO, 1);
+        //vTaskDelay(pdMS_TO_TICKS(100));
+        //gpio_set_level(DATA_LED_GPIO, 0);
 
         break;
 
@@ -562,6 +574,9 @@ static void status_led_init(void)
 
     ESP_ERROR_CHECK(gpio_config(&led_config));
 
+    // TEMP TEST: force yellow LED ON continuously
+    //gpio_set_level(DATA_LED_GPIO, 1);
+
     //start with data LED off
     gpio_set_level(DATA_LED_GPIO, 0);
 
@@ -632,6 +647,21 @@ static void thermistor_task(void *pvParameters)
     }
 }
 
+static void data_led_test_task(void *pvParameters)
+{
+    while (1)
+    {
+        ESP_LOGI(TAG, "Yellow LED ON");
+        gpio_set_level(DATA_LED_GPIO, 1);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+
+        ESP_LOGI(TAG, "Yellow LED OFF");
+        gpio_set_level(DATA_LED_GPIO, 0);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
+
+
 //---------------------------------------------------------
 //                          Main
 //---------------------------------------------------------
@@ -662,8 +692,9 @@ void app_main(void)
     //strta the pulse processing task before enabling GPIO interupts so that the task is ready to handle pulses immediately
     xTaskCreate(pulse_task, "pulse_task", 3072, NULL, 10, &pulse_task_handle);
 
-    //configure GPIO38 for data/activity LED
+    //configure GPIO15 for data/activity LED
     status_led_init();
+
 
     //configure the GPIO4 for dry contact pulse detection
     flow_meter_init();
