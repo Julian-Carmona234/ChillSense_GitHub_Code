@@ -58,23 +58,23 @@
 //---------------------------------------------------------
 #define FLOW_GPIO GPIO_NUM_4
 
-// Thermistor
+//thermistor
 #define THERMISTOR_GPIO GPIO_NUM_1
 #define THERMISTOR_ADC_CHANNEL ADC_CHANNEL_0
 
-// White thermistor status LED
+//white thermistor status LED
 #define THERMISTOR_LED_GPIO GPIO_NUM_14
 
-// Actual thermistor specifications
+//thermistor specifications
 #define THERMISTOR_R0_OHMS 50000.0f
 #define THERMISTOR_BETA 3590.0f
 #define THERMISTOR_T0_C 25.0f
 
-// Fixed resistor used in voltage divider
-// Use 47k or 50k physically on the breadboard.
+//resistor used in voltage divider
+//use 47k or 50k physically on the breadboard
 #define THERMISTOR_FIXED_RESISTOR_OHMS 50000.0f
 
-// Temporary health-check thresholds
+//temp health-check thresholds
 #define THERMISTOR_MIN_RAW 100
 #define THERMISTOR_MAX_RAW 3900
 
@@ -83,7 +83,7 @@
 //data LED
 #define DATA_LED_GPIO GPIO_NUM_15
 
-//meter is 1 gallon per pulse.
+//meter is 1 gallon per pulse (tempoary value since the meter is mcuh faster than 1 gallon per pulse)
 #define GALLONS_PER_PULSE 1.0f
 
 //ignore additional switch closures that happen too soon afterthe previous pulse
@@ -280,7 +280,7 @@ static void flow_meter_init(void)
 static void thermistor_init(void)
 {
     //-----------------------------------------------------
-    // White thermistor status LED
+    //           thermistor status LED (white)
     //-----------------------------------------------------
     gpio_config_t led_config =
     {
@@ -298,48 +298,28 @@ static void thermistor_init(void)
 
 
     //-----------------------------------------------------
-    // ADC1 initialization
+    //              ADC1 initialization
     //-----------------------------------------------------
-    adc_oneshot_unit_init_cfg_t adc_init_config =
-    {
-        .unit_id = ADC_UNIT_1
-    };
+    adc_oneshot_unit_init_cfg_t adc_init_config = {.unit_id = ADC_UNIT_1};
 
-    ESP_ERROR_CHECK(
-        adc_oneshot_new_unit(&adc_init_config, &adc1_handle)
-    );
+    ESP_ERROR_CHECK(adc_oneshot_new_unit(&adc_init_config, &adc1_handle));
 
 
     //-----------------------------------------------------
-    // GPIO1 / ADC1 Channel 0 configuration
+    //          GPIO1 / ADC1 Channel 0 configuration
     //-----------------------------------------------------
-    adc_oneshot_chan_cfg_t adc_channel_config =
-    {
-        .atten = ADC_ATTEN_DB_12,
-        .bitwidth = ADC_BITWIDTH_DEFAULT
-    };
+    adc_oneshot_chan_cfg_t adc_channel_config = {.atten = ADC_ATTEN_DB_12, .bitwidth = ADC_BITWIDTH_DEFAULT};
 
-    ESP_ERROR_CHECK(
-        adc_oneshot_config_channel(
-            adc1_handle,
-            THERMISTOR_ADC_CHANNEL,
-            &adc_channel_config
-        )
-    );
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, THERMISTOR_ADC_CHANNEL, &adc_channel_config));
 
-    ESP_LOGI(
-        TAG,
-        "Thermistor initialized on GPIO%d, status LED on GPIO%d",
-        THERMISTOR_GPIO,
-        THERMISTOR_LED_GPIO
-    );
+    ESP_LOGI(TAG, "Thermistor initialized on GPIO%d, status LED on GPIO%d", THERMISTOR_GPIO, THERMISTOR_LED_GPIO);
 }
 
 //---------------------------------------------------------
 //          Periodic MQTT telemetry task
 //--------------------------------------------------------- 
-// Runs every 5 seconds
-// This task does:
+// runs every 5 seconds (for testing, will be changed to longer intervals in the future)
+// this task does:
 // 1. reads the latest flow-meter values
 // 2. builds a JSON message
 // 3. publishes that message to the MQTT broker
@@ -517,7 +497,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 }
 
 //---------------------------------------------------------
-//MQTT initialization (came with template)
+//          MQTT initialization (came with template)
 //--------------------------------------------------------- 
 // creates the MQTT client and connects it to the broker
 //
@@ -574,7 +554,7 @@ static void status_led_init(void)
 
     ESP_ERROR_CHECK(gpio_config(&led_config));
 
-    // TEMP TEST: force yellow LED ON continuously
+    //temp test: force yellow LED ON continuously
     //gpio_set_level(DATA_LED_GPIO, 1);
 
     //start with data LED off
@@ -600,50 +580,35 @@ static void thermistor_task(void *pvParameters)
 
         if (result == ESP_OK)
         {
-            bool thermistor_valid =
-                (adc_raw > THERMISTOR_MIN_RAW) &&
-                (adc_raw < THERMISTOR_MAX_RAW);
+            bool thermistor_valid = (adc_raw > THERMISTOR_MIN_RAW) && (adc_raw < THERMISTOR_MAX_RAW);
 
             if (thermistor_valid)
             {
-                // Thermistor circuit appears connected
+                //thermistor circuit appears connected
                 gpio_set_level(THERMISTOR_LED_GPIO, 1);
 
-                ESP_LOGI(
-                    TAG,
-                    "Thermistor OK: ADC raw = %d",
-                    adc_raw
-                );
+                ESP_LOGI(TAG, "Thermistor OK: ADC raw = %d", adc_raw);
             }
             else
             {
-                // Reading is near one of the voltage rails,
-                // indicating possible open circuit,
-                // disconnected sensor, or short circuit
+                //reading is near one of the voltage rails,
+                //indicating possible open circuit,
+                //disconnected sensor, or short circuit
                 gpio_set_level(THERMISTOR_LED_GPIO, 0);
 
-                ESP_LOGW(
-                    TAG,
-                    "Thermistor fault/disconnected: ADC raw = %d",
-                    adc_raw
-                );
+                ESP_LOGW(TAG, "Thermistor fault/disconnected: ADC raw = %d",adc_raw);
             }
         }
         else
         {
-            // ADC itself failed to return a reading
+            //ADC itself failed to return a reading
             gpio_set_level(THERMISTOR_LED_GPIO, 0);
 
-            ESP_LOGE(
-                TAG,
-                "Failed to read thermistor ADC"
-            );
+            ESP_LOGE(TAG,"Failed to read thermistor ADC");
         }
 
-        // Check once per second
-        vTaskDelay(
-            pdMS_TO_TICKS(THERMISTOR_CHECK_PERIOD_MS)
-        );
+        //check once per second
+        vTaskDelay(pdMS_TO_TICKS(THERMISTOR_CHECK_PERIOD_MS));
     }
 }
 
